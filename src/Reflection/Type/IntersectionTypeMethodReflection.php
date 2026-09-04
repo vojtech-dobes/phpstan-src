@@ -8,13 +8,18 @@ use PHPStan\Reflection\ClassMemberReflection;
 use PHPStan\Reflection\ClassReflection;
 use PHPStan\Reflection\ExtendedFunctionVariant;
 use PHPStan\Reflection\ExtendedMethodReflection;
+use PHPStan\Reflection\ExtendedParameterReflection;
 use PHPStan\Reflection\ExtendedParametersAcceptor;
 use PHPStan\Reflection\MethodReflection;
+use PHPStan\Reflection\ParameterReflection;
+use PHPStan\Reflection\Php\ExtendedDummyParameter;
 use PHPStan\ShouldNotHappenException;
 use PHPStan\TrinaryLogic;
+use PHPStan\Type\MixedType;
 use PHPStan\Type\Type;
 use PHPStan\Type\TypeCombinator;
 use function array_map;
+use function array_values;
 use function count;
 use function implode;
 use function is_bool;
@@ -84,6 +89,8 @@ final class IntersectionTypeMethodReflection implements ExtendedMethodReflection
 		$returnTypes = [];
 		$phpDocReturnTypes = [];
 		$nativeReturnTypes = [];
+
+		$parametersByPosition = [];
 		foreach ($this->methods as $method) {
 			$variants = $method->getVariants();
 
@@ -91,6 +98,10 @@ final class IntersectionTypeMethodReflection implements ExtendedMethodReflection
 				$returnTypes[] = $acceptor->getReturnType();
 				$phpDocReturnTypes[] = $acceptor->getPhpDocReturnType();
 				$nativeReturnTypes[] = $acceptor->getNativeReturnType();
+
+				foreach ($acceptor->getParameters() as $i => $parameter) {
+					$parametersByPosition[$i][] = $parameter;
+				}
 			}
 		}
 
@@ -106,16 +117,69 @@ final class IntersectionTypeMethodReflection implements ExtendedMethodReflection
 		for ($i = 1, $count = count($nativeReturnTypes); $i < $count; $i++) {
 			$nativeReturnType = TypeCombinator::intersect($nativeReturnType, $nativeReturnTypes[$i]);
 		}
+
+		$parameters = $this->intersectParameters($parametersByPosition);
+
 		return array_map(static fn (ExtendedParametersAcceptor $acceptor): ExtendedParametersAcceptor => new ExtendedFunctionVariant(
 			$acceptor->getTemplateTypeMap(),
 			$acceptor->getResolvedTemplateTypeMap(),
-			$acceptor->getParameters(),
+			$parameters,
 			$acceptor->isVariadic(),
 			$returnType,
 			$phpDocReturnType,
 			$nativeReturnType,
 			$acceptor->getCallSiteVarianceMap(),
 		), $this->getMethodWithMostParameters()->getVariants());
+	}
+
+	/**
+	 * Parameters are in a contravariant position, but since an intersection type
+	 * calls into a single real method through several differently-resolved
+	 * reflections (e.g. the same generic method with a different template
+	 * type binding per intersected type), the value passed at the call site
+	 * has to satisfy every one of them at once - so, unlike return types,
+	 * intersecting still is the correct combination here, not a union.
+	 *
+	 * @param array<int, list<ParameterReflection>> $parametersByPosition
+	 * @return list<ExtendedParameterReflection>
+	 */
+	private function intersectParameters(array $parametersByPosition): array
+	{
+		return array_map(static function ($positionalParameters) {
+			$first = $positionalParameters[0];
+
+			$type = $first->getType();
+			$phpDocType = $first instanceof ExtendedParameterReflection ? $first->getPhpDocType() : $type;
+			$nativeType = $first instanceof ExtendedParameterReflection ? $first->getNativeType() : new MixedType();
+
+			for ($j = 1, $count = count($positionalParameters); $j < $count; $j++) {
+				$parameter = $positionalParameters[$j];
+				$type = TypeCombinator::intersect($type, $parameter->getType());
+				if (!($parameter instanceof ExtendedParameterReflection)) {
+					continue;
+				}
+
+				$phpDocType = TypeCombinator::intersect($phpDocType, $parameter->getPhpDocType());
+				$nativeType = TypeCombinator::intersect($nativeType, $parameter->getNativeType());
+			}
+
+			return new ExtendedDummyParameter(
+				$first->getName(),
+				$type,
+				$first->isOptional(),
+				$first->passedByReference(),
+				$first->isVariadic(),
+				$first->getDefaultValue(),
+				$nativeType,
+				$phpDocType,
+				$first instanceof ExtendedParameterReflection ? $first->getOutType() : null,
+				$first instanceof ExtendedParameterReflection ? $first->isImmediatelyInvokedCallable() : TrinaryLogic::createMaybe(),
+				$first instanceof ExtendedParameterReflection ? $first->getClosureThisType() : null,
+				$first instanceof ExtendedParameterReflection ? $first->getAttributes() : [],
+				$first instanceof ExtendedParameterReflection ? $first->getAllowedConstants() : null,
+				$first instanceof ExtendedParameterReflection ? $first->isPureUnlessCallableIsImpureParameter() : TrinaryLogic::createNo(),
+			);
+		}, array_values($parametersByPosition));
 	}
 
 	public function getOnlyVariant(): ExtendedParametersAcceptor

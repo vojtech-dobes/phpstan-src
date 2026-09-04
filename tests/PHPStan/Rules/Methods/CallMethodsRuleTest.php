@@ -4427,6 +4427,26 @@ class CallMethodsRuleTest extends RuleTestCase
 		]);
 	}
 
+	#[RequiresPhp('>= 8.1.0')]
+	public function testIntersectionGenericMethodCallableArgument(): void
+	{
+		$this->checkThisOnly = false;
+		$this->checkNullables = true;
+		$this->checkUnionTypes = true;
+
+		$this->analyse([__DIR__ . '/data/intersection-generic-method-callable-argument.php'], [
+			[
+				'Parameter #1 $c of method IntersectionGenericMethodCallableArgument\Collection<IntersectionGenericMethodCallableArgument\Foo>::map() expects callable(IntersectionGenericMethodCallableArgument\Foo&object{bar: IntersectionGenericMethodCallableArgument\Bar}): int, Closure(int): int given.',
+				69,
+			],
+			[
+				'Parameter #1 $c of method IntersectionGenericMethodCallableArgument\Collection<IntersectionGenericMethodCallableArgument\Foo>::map() expects callable(IntersectionGenericMethodCallableArgument\Foo): IntersectionGenericMethodCallableArgument\Bar, Closure(object{bar: IntersectionGenericMethodCallableArgument\Bar}): IntersectionGenericMethodCallableArgument\Bar given.',
+				79,
+				"• Property (\$bar) type IntersectionGenericMethodCallableArgument\\Bar does not accept type IntersectionGenericMethodCallableArgument\\Bar|null.\n• Type object{bar: IntersectionGenericMethodCallableArgument\\Bar} of parameter #1 \$item of passed callable needs to be same or wider than parameter type IntersectionGenericMethodCallableArgument\\Foo of accepting callable.",
+			],
+		]);
+	}
+
 	public function testUnconstrainedCollectionTemplateArguments(): void
 	{
 		$this->checkThisOnly = false;
