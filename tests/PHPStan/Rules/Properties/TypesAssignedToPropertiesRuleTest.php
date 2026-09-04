@@ -1105,6 +1105,17 @@ class TypesAssignedToPropertiesRuleTest extends RuleTestCase
 		]);
 	}
 
+	#[RequiresPhp('>= 8.1.0')]
+	public function testIntersectionGenericPropertyCallableArgument(): void
+	{
+		$this->analyse([__DIR__ . '/data/intersection-generic-property-callable-argument.php'], [
+			[
+				'Property IntersectionGenericPropertyCallableArgument\Box<IntersectionGenericPropertyCallableArgument\Foo>::$c (callable(IntersectionGenericPropertyCallableArgument\Foo&object{bar: IntersectionGenericPropertyCallableArgument\Bar}): int) does not accept Closure(int): int.',
+				55,
+			],
+		]);
+	}
+
 	#[RequiresPhp('>= 8.2.0')]
 	public function testBug13431(): void
 	{

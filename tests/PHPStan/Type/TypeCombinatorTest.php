@@ -19,6 +19,8 @@ use PHPStan\Fixture\FinalClass;
 use PHPStan\Generics\FunctionsAssertType\C;
 use PHPStan\PhpDoc\TypeStringResolver;
 use PHPStan\Reflection\Callables\SimpleImpurePoint;
+use PHPStan\Reflection\Native\NativeParameterReflection;
+use PHPStan\Reflection\PassedByReference;
 use PHPStan\Testing\PHPStanTestCase;
 use PHPStan\TrinaryLogic;
 use PHPStan\Type\Accessory\AccessoryArrayListType;
@@ -5212,6 +5214,60 @@ class TypeCombinatorTest extends PHPStanTestCase
 			],
 			ClosureType::class,
 			'static-Closure(): mixed',
+		];
+		yield 'intersect of two callables whose parameter types merely might overlap' => [
+			[
+				new CallableType([
+					new NativeParameterReflection('item', false, new ObjectType(stdClass::class), PassedByReference::createNo(), false, null),
+				], new MixedType(), false),
+				new CallableType([
+					new NativeParameterReflection('item', false, new ObjectShapeType(['message' => new StringType()], []), PassedByReference::createNo(), false, null),
+				], new MixedType(), false),
+			],
+			CallableType::class,
+			'callable(object{message: string}&stdClass): mixed',
+		];
+		yield 'intersect of two callables whose parameter types are definitely incompatible scalars' => [
+			[
+				'callable(int): mixed',
+				'callable(string): mixed',
+			],
+			NeverType::class,
+			'*NEVER*=implicit',
+		];
+		yield 'intersect of two callables whose return types merely might overlap, same parameter' => [
+			[
+				'callable(stdClass): Countable',
+				'callable(stdClass): ArrayAccess',
+			],
+			CallableType::class,
+			'callable(stdClass): (ArrayAccess&Countable)',
+		];
+		yield 'intersect of three callables whose parameter types merely might overlap, chained' => [
+			[
+				'callable(Countable): void',
+				'callable(ArrayAccess): void',
+				'callable(Traversable): void',
+			],
+			CallableType::class,
+			'callable(ArrayAccess&Countable&Traversable): void',
+		];
+		yield 'intersect of three callables where a chained merge still hits a definite incompatibility' => [
+			[
+				'callable(Countable): void',
+				'callable(ArrayAccess): void',
+				'callable(int): void',
+			],
+			NeverType::class,
+			'*NEVER*=implicit',
+		];
+		yield 'intersect of a callable with a union of callables distributes before merging' => [
+			[
+				'callable(Countable): void',
+				'(callable(ArrayAccess): void)|(callable(Traversable): void)',
+			],
+			UnionType::class,
+			'(callable(ArrayAccess&Countable): void)|(callable(Countable&Traversable): void)',
 		];
 
 		$xy = new ConstantArrayType([

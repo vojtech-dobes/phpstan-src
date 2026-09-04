@@ -1404,7 +1404,7 @@ class IntersectionType implements CompoundType
 		$result = [];
 		$combinations = CombinationsHelper::combinations($yesAcceptors);
 		foreach ($combinations as $combination) {
-			$combined = ParametersAcceptorSelector::combineAcceptors($combination);
+			$combined = ParametersAcceptorSelector::intersectAcceptors($combination);
 			if (!$combined instanceof CallableParametersAcceptor) {
 				throw new ShouldNotHappenException();
 			}

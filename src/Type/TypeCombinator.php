@@ -2,6 +2,8 @@
 
 namespace PHPStan\Type;
 
+use PHPStan\Analyser\OutOfClassScope;
+use PHPStan\Reflection\ParametersAcceptorSelector;
 use PHPStan\TrinaryLogic;
 use PHPStan\Turbo\ReferencedByTurboExtension;
 use PHPStan\Turbo\TurboExtensionEnabler;
@@ -2095,6 +2097,16 @@ final class TypeCombinator
 						continue;
 					}
 
+					if ($types[$i]->isCallable()->yes() && $types[$j]->isCallable()->yes()) {
+						$merged = self::intersectCallables($types[$i], $types[$j]);
+						if ($merged !== null) {
+							$types[$i] = $merged;
+							array_splice($types, $j--, 1);
+							$typesCount--;
+							continue;
+						}
+					}
+
 					continue;
 				}
 
@@ -2106,6 +2118,18 @@ final class TypeCombinator
 
 				if ($isSuperTypeA->no()) {
 					return new NeverType(reason: $isSuperTypeA->getReasons()[0] ?? null);
+				}
+
+				if (!$types[$i]->isCallable()->yes() || !$types[$j]->isCallable()->yes()) {
+					continue;
+				}
+
+				$merged = self::intersectCallables($types[$i], $types[$j]);
+				if ($merged !== null) {
+					$types[$i] = $merged;
+					array_splice($types, $j--, 1);
+					$typesCount--;
+					continue;
 				}
 			}
 		}
@@ -2142,6 +2166,32 @@ final class TypeCombinator
 		}
 
 		return new IntersectionType($types);
+	}
+
+	private static function intersectCallables(Type $a, Type $b): ?Type
+	{
+		$scope = new OutOfClassScope();
+		$acceptorsA = $a->getCallableParametersAcceptors($scope);
+		$acceptorsB = $b->getCallableParametersAcceptors($scope);
+
+		$variants = [];
+		foreach ($acceptorsA as $acceptorA) {
+			foreach ($acceptorsB as $acceptorB) {
+				$merged = ParametersAcceptorSelector::intersectAcceptors([$acceptorA, $acceptorB]);
+				$variants[] = new CallableType(
+					$merged->getParameters(),
+					$merged->getReturnType(),
+					$merged->isVariadic(),
+				);
+			}
+		}
+
+		if (count($variants) !== 1) {
+			// ambiguous (an overloaded callable on either side)
+			return null;
+		}
+
+		return $variants[0];
 	}
 
 	private static function intersectDefiniteConstantArrays(ConstantArrayType $a, ConstantArrayType $b): Type

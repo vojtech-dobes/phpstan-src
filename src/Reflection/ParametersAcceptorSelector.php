@@ -763,6 +763,22 @@ final class ParametersAcceptorSelector
 	 */
 	public static function combineAcceptors(array $acceptors): ExtendedParametersAcceptor
 	{
+		return self::mergeAcceptors($acceptors, true);
+	}
+
+	/**
+	 * @param ParametersAcceptor[] $acceptors
+	 */
+	public static function intersectAcceptors(array $acceptors): ExtendedParametersAcceptor
+	{
+		return self::mergeAcceptors($acceptors, false);
+	}
+
+	/**
+	 * @param ParametersAcceptor[] $acceptors
+	 */
+	private static function mergeAcceptors(array $acceptors, bool $union): ExtendedParametersAcceptor
+	{
 		if (count($acceptors) === 0) {
 			throw new ShouldNotHappenException(
 				'getVariants() must return at least one variant.',
@@ -771,6 +787,8 @@ final class ParametersAcceptorSelector
 		if (count($acceptors) === 1) {
 			return self::wrapAcceptor($acceptors[0]);
 		}
+
+		$combineTypes = static fn (Type ...$types): Type => $union ? TypeCombinator::union(...$types) : TypeCombinator::intersect(...$types);
 
 		$minimumNumberOfParameters = null;
 		foreach ($acceptors as $acceptor) {
@@ -850,12 +868,12 @@ final class ParametersAcceptorSelector
 				$defaultValueLeft = $parameters[$i]->getDefaultValue();
 				$defaultValueRight = $parameter->getDefaultValue();
 				if ($defaultValueLeft !== null && $defaultValueRight !== null) {
-					$defaultValue = TypeCombinator::union($defaultValueLeft, $defaultValueRight);
+					$defaultValue = $combineTypes($defaultValueLeft, $defaultValueRight);
 				} else {
 					$defaultValue = null;
 				}
 
-				$type = TypeCombinator::union($parameters[$i]->getType(), $parameter->getType());
+				$type = $combineTypes($parameters[$i]->getType(), $parameter->getType());
 				$nativeType = $parameters[$i]->getNativeType();
 				$phpDocType = $parameters[$i]->getPhpDocType();
 				$outType = $parameters[$i]->getOutType();
@@ -863,17 +881,17 @@ final class ParametersAcceptorSelector
 				$closureThisType = $parameters[$i]->getClosureThisType();
 				$attributes = $parameters[$i]->getAttributes();
 				if ($parameter instanceof ExtendedParameterReflection) {
-					$nativeType = TypeCombinator::union($nativeType, $parameter->getNativeType());
-					$phpDocType = TypeCombinator::union($phpDocType, $parameter->getPhpDocType());
+					$nativeType = $combineTypes($nativeType, $parameter->getNativeType());
+					$phpDocType = $combineTypes($phpDocType, $parameter->getPhpDocType());
 
 					if ($parameter->getOutType() !== null) {
-						$outType = $outType === null ? null : TypeCombinator::union($outType, $parameter->getOutType());
+						$outType = $outType === null ? null : $combineTypes($outType, $parameter->getOutType());
 					} else {
 						$outType = null;
 					}
 
 					if ($parameter->getClosureThisType() !== null && $closureThisType !== null) {
-						$closureThisType = TypeCombinator::union($closureThisType, $parameter->getClosureThisType());
+						$closureThisType = $combineTypes($closureThisType, $parameter->getClosureThisType());
 					} else {
 						$closureThisType = null;
 					}
@@ -924,9 +942,9 @@ final class ParametersAcceptorSelector
 			}
 		}
 
-		$returnType = TypeCombinator::union(...$returnTypes);
-		$phpDocReturnType = $phpDocReturnTypes === [] ? null : TypeCombinator::union(...$phpDocReturnTypes);
-		$nativeReturnType = $nativeReturnTypes === [] ? null : TypeCombinator::union(...$nativeReturnTypes);
+		$returnType = $combineTypes(...$returnTypes);
+		$phpDocReturnType = $phpDocReturnTypes === [] ? null : $combineTypes(...$phpDocReturnTypes);
+		$nativeReturnType = $nativeReturnTypes === [] ? null : $combineTypes(...$nativeReturnTypes);
 
 		if ($callableOccurred) {
 			return new ExtendedCallableFunctionVariant(
